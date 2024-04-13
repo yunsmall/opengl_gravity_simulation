@@ -24,6 +24,7 @@ public:
     constexpr static const float DEFAULT_SPEED=2.5f;
     constexpr static const float DEFAULT_SENSITIVITY =  0.1f;
     constexpr static const float DEFAULT_FOV        =  45.0f;
+    constexpr static const float DEFAULT_RATE        =  1.0f;
 
 public:
     glm::vec3 position;
@@ -35,9 +36,10 @@ public:
     float yaw,pitch;
     float speed,sensitivity;
     float fov;
+    float rate;
 
     // constructor with vectors
-    Camera(glm::vec3 position = glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f), float yaw = DEFAULT_YAW, float pitch = PITCH_DEFAULT);
+    Camera(glm::vec3 position = glm::vec3(0.0f, 0.0f, 0.0f),float rate=DEFAULT_RATE, glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f), float yaw = DEFAULT_YAW, float pitch = PITCH_DEFAULT);
     // constructor with scalar values
     Camera(float posX, float posY, float posZ, float upX, float upY, float upZ, float yaw, float pitch);
 

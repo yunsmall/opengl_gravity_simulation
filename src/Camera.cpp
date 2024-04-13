@@ -66,7 +66,7 @@ void Camera::ProcessKeyboard(Camera_Movement direction, float deltaTime)
 
 glm::mat4 Camera::GetViewMatrix()
 {
-    return glm::lookAt(position, position + front, up);
+    return glm::scale(glm::lookAt(position, position + front, up),glm::vec3(rate));
 }
 
 Camera::Camera(float posX, float posY, float posZ, float upX, float upY, float upZ, float yaw, float pitch) : front(glm::vec3(0.0f, 0.0f, -1.0f)), speed(DEFAULT_SPEED), sensitivity(DEFAULT_SENSITIVITY), fov(DEFAULT_FOV)
@@ -78,7 +78,7 @@ Camera::Camera(float posX, float posY, float posZ, float upX, float upY, float u
     updateCameraVectors();
 }
 
-Camera::Camera(glm::vec3 position, glm::vec3 up, float yaw, float pitch) : front(glm::vec3(0.0f, 0.0f, -1.0f)), speed(DEFAULT_SPEED), sensitivity(DEFAULT_SENSITIVITY), fov(DEFAULT_FOV)
+Camera::Camera(glm::vec3 position,float rate, glm::vec3 up, float yaw, float pitch) : front(glm::vec3(0.0f, 0.0f, -1.0f)), speed(DEFAULT_SPEED), sensitivity(DEFAULT_SENSITIVITY), fov(DEFAULT_FOV),rate(rate)
 {
     this->position = position;
     worldUp = up;
