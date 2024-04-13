@@ -8,9 +8,11 @@ include_directories(src/physics)
 
 add_compile_definitions(_USE_MATH_DEFINES)
 
-file(GLOB_RECURSE SRC_FILES src/*.cpp)
+file(GLOB_RECURSE SRC_SIMLULATION_FILES src/physics/*.cpp)
+file(GLOB SRC_VISION_FILES src/*.cpp)
 
-add_executable(${PROJECT_NAME} main.cpp ${SRC_FILES})
+add_executable(${PROJECT_NAME} main.cpp ${SRC_SIMLULATION_FILES} ${SRC_VISION_FILES})
+add_executable(${PROJECT_NAME}_console main_console.cpp ${SRC_SIMLULATION_FILES})
 
 find_package(glad CONFIG REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
@@ -29,3 +31,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE glm::glm)
 target_link_libraries(${PROJECT_NAME} PRIVATE Eigen3::Eigen)
 target_link_libraries(${PROJECT_NAME} PRIVATE imgui::imgui)
 target_link_libraries(${PROJECT_NAME} PRIVATE assimp::assimp)
+
+target_link_libraries(${PROJECT_NAME}_console PRIVATE spdlog::spdlog_header_only)
+target_link_libraries(${PROJECT_NAME}_console PRIVATE Eigen3::Eigen)

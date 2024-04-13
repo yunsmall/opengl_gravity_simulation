@@ -7,6 +7,13 @@
 #include "GravityObject.h"
 
 class Planet:public GravityObject {
+public:
+    explicit Planet(Eigen::Vector3d position,double mass,double charge);
+    Planet(Eigen::Vector3d position,double mass,double charge,Eigen::Vector3d last_postion);
+    Planet(Eigen::Vector3d position,double mass,double charge,PhysicsCtrl physicsCtrl,Eigen::Vector3d velocity=Eigen::Vector3d(0,0,0));
+
+    virtual ~Planet()=default;
+protected:
 
 };
 

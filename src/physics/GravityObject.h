@@ -8,6 +8,18 @@
 #include "PhysicsObject.h"
 
 class GravityObject: public PhysicsObject {
+    friend class Simulation;
+public:
+    explicit GravityObject(Eigen::Vector3d position,double mass,double charge);
+    GravityObject(Eigen::Vector3d position,double mass,double charge,Eigen::Vector3d last_postion);
+    GravityObject(Eigen::Vector3d position,double mass,double charge,PhysicsCtrl physicsCtrl,Eigen::Vector3d velocity=Eigen::Vector3d(0,0,0));
+    GravityObject(const GravityObject&)=delete;
+    virtual ~GravityObject()=default;
+protected:
+    double mass;
+    double charge;
+
+    bool forceMotionless=false;
 
 };
 
