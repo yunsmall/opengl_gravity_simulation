@@ -8,7 +8,7 @@
 
 class PhysicsCtrl {
 public:
-    double simulate_gap=1e-3;
+    double simulate_gap=1e-5;
     double G=1e3,k=1e3;
 
 //    static PhysicsCtrl defaultPhysicsCtrl;

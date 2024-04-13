@@ -28,7 +28,7 @@ public:
     void parseCommand(SimulationCommand command);
     State getState();
     double getGap();
-    const std::mutex& getPublicMutex();
+    std::mutex& getPublicMutex();
 
     void runOneSimulation();
 

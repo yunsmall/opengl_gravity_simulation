@@ -14,7 +14,7 @@ int main(){
     }
 
     simulation.parseCommand(SimulationCommand::RUN);
-    for(int i=0;i<1000;i++){
+    for(int i=0;i<3;i++){
         simulation.runOneSimulation();
         auto date=simulation.getAllPhysicsObj();
         for(auto& j:date){

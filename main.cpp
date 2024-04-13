@@ -7,20 +7,91 @@
 #include <spdlog/spdlog.h>
 #include "Shader.h"
 #include "Camera.h"
+#include "Simulation.h"
+#include <vector>
+#include <thread>
+#include <atomic>
+
+#include <boost/lockfree/spsc_queue.hpp>
+
+struct Settings{
+    Eigen::Vector3d set_v=Eigen::Vector3d(0,0,0);
+    double set_mass=1e5,set_q=0;
+    double set_radius=100;
+    int tmp_set_simulate_time_gap=1000;
+    bool place_mode=false;
+    Eigen::Vector3d place_position=Eigen::Vector3d(1,0,0);
+};
+
+Settings settings;
+
+
+Simulation simulation;
+
+std::atomic<bool> need_calc=true;
+boost::lockfree::spsc_queue<std::vector<PhysicsObject*>,boost::lockfree::capacity<1>> physics_spscQueue;
+boost::lockfree::spsc_queue<SimulationCommand,boost::lockfree::capacity<1>> simulate_command;
+
+std::atomic<int> simulate_time_gap=1000;
+std::chrono::microseconds REAL_GAP_TIME(1000);
+
+void thread_func(){
+    while(need_calc){
+        auto start_time=std::chrono::high_resolution_clock::now();
+        simulation.runOneSimulation();
+        if(physics_spscQueue.empty()){
+            physics_spscQueue.push(simulation.getAllPhysicsObj());
+        }
+        std::cout<<"计算花了"<<std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now()-start_time).count()<<"微秒"<<std::endl;
+//        if(chrono::high_resolution_clock::now()-start_time<REAL_GAP_TIME){
+//            while(chrono::high_resolution_clock::now()-start_time<REAL_GAP_TIME);
+//        }
+//        else{//如果算得太慢了，防止一直占用锁，强制停下半个间隔
+//            auto force_wait_start_time= chrono::high_resolution_clock::now();
+//            while(chrono::high_resolution_clock::now()-force_wait_start_time<REAL_GAP_TIME/2);
+//        }
+        while(std::chrono::high_resolution_clock::now()-start_time<REAL_GAP_TIME);
+        if(REAL_GAP_TIME.count()!=simulate_time_gap){
+            REAL_GAP_TIME=std::chrono::microseconds(simulate_time_gap);
+        }
+
+//        this_thread::sleep_for(chrono::microseconds(100));
+        if(simulation.getState()==Simulation::State::PAUSED){
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+
+        if(!simulate_command.empty()){
+            SimulationCommand send_command;
+            simulate_command.pop(send_command);
+            simulation.parseCommand(send_command);
+        }
+
+    }
+
+}
+
+
+
 
 
 int main() {
+    glfwSetErrorCallback([](int error, const char* description){
+        spdlog::error("GLFW Error {}: {}",error,description);
+    });
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR,3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR,3);
     glfwWindowHint(GLFW_OPENGL_PROFILE,GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window= glfwCreateWindow(800,600,"opengl imgui测试",nullptr,nullptr);
+    static int window_width=800,window_height=600;
+
+    GLFWwindow* window= glfwCreateWindow(window_width,window_height,"opengl imgui测试",nullptr,nullptr);
     if(!window){
         spdlog::error("glfw窗口创建失败");
         glfwTerminate();
         return -1;
     }
+    GLFWmonitor* monitor=glfwGetPrimaryMonitor();
 
     glfwMakeContextCurrent(window);
     if(!gladLoadGLLoader((GLADloadproc) glfwGetProcAddress)){
@@ -28,25 +99,46 @@ int main() {
         glfwTerminate();
         return -1;
     }
+    glEnable(GL_DEPTH_TEST);
+
 
     glViewport(0,0,800,600);
     glfwSetFramebufferSizeCallback(window,[](GLFWwindow* window, int width, int height){
         glViewport(0,0,width,height);
+        window_width=width;
+        window_height=height;
+
     });
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     ImGui::CreateContext();
-    ImGuiIO& io=ImGui::GetIO();
+    static ImGuiIO& io=ImGui::GetIO();
     ImGui::StyleColorsDark();
     io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\msyh.ttc", 18.0f,nullptr,
                                  io.Fonts->GetGlyphRangesChineseFull());
     ImGui_ImplGlfw_InitForOpenGL(window,true);
     ImGui_ImplOpenGL3_Init("#version 330");
 
+    std::vector<Planet*> all_planet;
+    for(int i=-3;i<=3;i++){
+        for(int j=-3;j<=3;j++){
+            for(int k=-3;k<=3;k++){
+                Planet* new_planet=new Planet(Eigen::Vector3d(10*i,10*j,10*k),10000,0);
+                all_planet.push_back(new_planet);
+                simulation.addAnObject((PhysicsObject*)new_planet);
+            }
+        }
+    }
+
+    static Simulation::State stateCpoy=simulation.getState();
+    std::thread simulation_thread(thread_func);
+    simulate_command.push(SimulationCommand::RUN);
+
     unsigned int VAO;
     glGenVertexArrays(1,&VAO);
     unsigned int VBO;
     glGenBuffers(1,&VBO);
-
+//
     float vertices[] = {
             // positions          // normals           // texture coords
             -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f,  0.0f,
@@ -100,24 +192,71 @@ int main() {
     glBindVertexArray(0);
 
     Shader shader("../assets/shaders/trans_3d_without_texture.vert","../assets/shaders/blue.frag");
+    Shader place_shader("../assets/shaders/trans_3d_without_texture.vert","../assets/shaders/orange.frag");
+
     static Camera camera(glm::vec3(0,0,0));
+    static bool mouseNoMovement=true;
 
     glfwSetCursorPosCallback(window, [](GLFWwindow* window, double xpos, double ypos){
 //        spdlog::info("当前鼠标位置{},{}",xpos,ypos);
         static float lastX = 400, lastY = 300;
-        float x_offset=xpos-lastX,y_offset=lastY-ypos;
-        lastX = xpos;
-        lastY = ypos;
+        if(stateCpoy==Simulation::State::RUNNING){
 
-        camera.ProcessMouseMovement(x_offset,y_offset);
-//        spdlog::info("摄像头朝向：{}",glm::to_string(camera_front));
+            if(mouseNoMovement)
+            {
+                lastX = xpos;
+                lastY = ypos;
+                mouseNoMovement = false;
+            }
+            float x_offset=xpos-lastX,y_offset=lastY-ypos;
+            lastX = xpos;
+            lastY = ypos;
+
+            camera.ProcessMouseMovement(x_offset,y_offset);
+//            spdlog::info("摄像头朝向：{}",glm::to_string(camera_front));
+        }
+//        if(io.WantCaptureMouse){
+            ImGui_ImplGlfw_CursorPosCallback(window,xpos,ypos);
+//        }
     });
-
+//
     glfwSetScrollCallback(window, [](GLFWwindow* window, double xoffset, double yoffset){
-        camera.ProcessMouseScroll(yoffset);
+        if(!settings.place_mode){
+            camera.ProcessMouseScroll(yoffset);
+        }
+        else{
+            settings.place_position+=Eigen::Vector3d(yoffset*0.1,0,0);
+        }
+        ImGui_ImplGlfw_ScrollCallback(window,xoffset,yoffset);
+    });
+//
+    glfwSetKeyCallback(window,[](GLFWwindow* window, int key, int scancode, int action, int mods){
+        if(key==GLFW_KEY_ESCAPE){
+            if(action==GLFW_PRESS){
+                if(stateCpoy==Simulation::State::RUNNING){
+                    mouseNoMovement=true;
+                    simulate_command.push(SimulationCommand::PAUSE);
+                    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                }
+                else{
+                    mouseNoMovement=true;
+                    simulate_command.push(SimulationCommand::RUN);
+                    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                }
+            }
+        }
+        ImGui_ImplGlfw_KeyCallback(window,key,scancode,action,mods);
     });
 
+    glfwSetMouseButtonCallback(window,[](GLFWwindow* window, int button, int action, int mods){
+
+        ImGui_ImplGlfw_MouseButtonCallback(window,button,action,mods);
+    });
+
+//
     double lastFrame = glfwGetTime(),currentFrame;
+
+    std::vector<PhysicsObject*> last_physics_objs;
 
     while(!glfwWindowShouldClose(window)){
         currentFrame = glfwGetTime();
@@ -125,32 +264,53 @@ int main() {
         delta_time=currentFrame-lastFrame;
         lastFrame=currentFrame;
 
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
-            glfwSetWindowShouldClose(window, true);
+        stateCpoy=simulation.getState();
+        glfwPollEvents();
+
+        bool is_running=stateCpoy==Simulation::State::RUNNING;
+//
+        if(is_running){
+            if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+                camera.ProcessKeyboard(Camera_Movement::LEFT,delta_time);
+            }
+            if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+                camera.ProcessKeyboard(Camera_Movement::RIGHT,delta_time);
+            }
+            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+                camera.ProcessKeyboard(Camera_Movement::FORWARD,delta_time);
+            }
+            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+                camera.ProcessKeyboard(Camera_Movement::BACKWARD,delta_time);
+            }
+            if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+                camera.ProcessKeyboard(Camera_Movement::UP,delta_time);
+            }
+            if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+                camera.ProcessKeyboard(Camera_Movement::DOWN,delta_time);
+            }
         }
 
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-            camera.ProcessKeyboard(Camera_Movement::LEFT,delta_time);
-        }
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-            camera.ProcessKeyboard(Camera_Movement::RIGHT,delta_time);
-        }
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-            camera.ProcessKeyboard(Camera_Movement::FORWARD,delta_time);
-        }
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-            camera.ProcessKeyboard(Camera_Movement::BACKWARD,delta_time);
-        }
-        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-            camera.ProcessKeyboard(Camera_Movement::UP,delta_time);
-        }
-        if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
-            camera.ProcessKeyboard(Camera_Movement::DOWN,delta_time);
-        }
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
+
+        if(stateCpoy==Simulation::State::PAUSED){
+            ImGui::Begin((char*)u8"测试中文");
+            ImGui::InputDouble((char*)u8"x轴速度",&settings.set_v.x());
+            ImGui::InputDouble((char*)u8"y轴速度",&settings.set_v.y());
+            ImGui::InputDouble((char*)u8"z轴速度",&settings.set_v.z());
+            ImGui::InputDouble((char*)u8"质量",&settings.set_mass);
+            ImGui::InputDouble((char*)u8"电荷",&settings.set_q);
+            ImGui::InputDouble((char*)u8"半径",&settings.set_radius);
+            ImGui::Checkbox((char*)u8"放置模式",&settings.place_mode);
+
+            if(ImGui::Button("退出")){
+                glfwSetWindowShouldClose(window,true);
+            }
+
+            ImGui::End();
+        }
 
 
         shader.use();
@@ -159,30 +319,49 @@ int main() {
         glm::mat4 view=camera.GetViewMatrix();
 
         glm::mat4 projection=glm::mat4(1.0f);
-        projection=glm::perspective(glm::radians(camera.fov),800.0f/600.0f,0.1f,100.0f);
+        const GLFWvidmode* glfWvidmode=glfwGetVideoMode(monitor);
 
+        projection=glm::perspective(glm::radians(camera.fov), (float)window_width/window_height,0.1f,100.0f);
+//
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+
+        shader.use();
+        glUniformMatrix4fv(shader.getValueID("view"),1,GL_FALSE,&view[0][0]);
+        glUniformMatrix4fv(shader.getValueID("projection"),1,GL_FALSE,&projection[0][0]);
+
+        if(!physics_spscQueue.empty()){
+            last_physics_objs.clear();
+            physics_spscQueue.pop(last_physics_objs);
+        }
+
+        glBindVertexArray(VAO);
+        for(auto& j:last_physics_objs){
+            auto position=j->getMPosition();
+//            std::cout<<position<<std::endl;
+            glm::mat4 model(1.0f);
+            model=glm::translate(glm::scale(model,glm::vec3(0.1,0.1,0.1)),glm::vec3(position.x(),position.y(),position.z()));
+            shader.setMat4("model",model);
 
 
-        ImGui::Begin("测试中文");
-        ImGui::End();
-
-
-
-
-
-
-
-
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-        glfwPollEvents();
         glfwSwapBuffers(window);
     }
-
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
     glfwTerminate();
+//
+    need_calc=false;
+    simulation_thread.join();
+    for(auto i:all_planet){
+        simulation.removeAnObject((PhysicsObject*)i);
+        delete i;
+    }
+    all_planet.clear();
     return 0;
 }

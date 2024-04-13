@@ -8,6 +8,7 @@
 using namespace std;
 
 Simulation::State Simulation::getState() {
+    lock_guard lockGuard(m_publicMutex);
     return m_currentState;
 }
 
@@ -15,7 +16,7 @@ double Simulation::getGap() {
     return m_simulateTimeGap;
 }
 
-const std::mutex &Simulation::getPublicMutex() {
+std::mutex &Simulation::getPublicMutex() {
     return m_publicMutex;
 }
 
@@ -77,7 +78,10 @@ void Simulation::runOneSimulation() {
                     auto parallelism_mp = *i.second.first.find(j.first);
 
                     //是否要计算万有引力和电磁力
-                    bool need_calc_gravity= typeid(i.first)== typeid(GravityObject)&&typeid(j.first)== typeid(GravityObject);
+                    GravityObject* i_as_gravity_obj=dynamic_cast<GravityObject*>(i.first);
+                    GravityObject* j_as_gravity_obj=dynamic_cast<GravityObject*>(j.first);
+
+                    bool need_calc_gravity= i_as_gravity_obj!=nullptr&& j_as_gravity_obj!=nullptr;
                     bool need_calc_electrocity=need_calc_gravity;
 
                     if (get<0>(parallelism_mp.second) == Eigen::Vector3d (DBL_MIN,DBL_MIN,DBL_MIN) &&
@@ -95,8 +99,6 @@ void Simulation::runOneSimulation() {
                             //先计算万有引力
                             double gmm_divide_r2;
                             if(need_calc_gravity){
-                                auto i_as_gravity_obj=(GravityObject*)(&i.first);
-                                auto j_as_gravity_obj=(GravityObject*)(&i.first);
                                 gmm_divide_r2= m_phCtrl.G * i_as_gravity_obj->mass * j_as_gravity_obj->mass / r_pow;//GMm/r^2
                             }
 
@@ -104,8 +106,6 @@ void Simulation::runOneSimulation() {
                             //再计算电磁力
                             double kqq_divide_r2;
                             if(need_calc_electrocity){
-                                auto i_as_gravity_obj=(GravityObject*)(&i.first);
-                                auto j_as_gravity_obj=(GravityObject*)(&i.first);
                                 kqq_divide_r2= m_phCtrl.k * i_as_gravity_obj->charge * j_as_gravity_obj->charge / r_pow;//kQq/r^2
                             }
                             double same_k_coefficient = -kqq_divide_r2 / r_abs;//-kQq/r^3

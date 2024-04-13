@@ -22,6 +22,8 @@ find_package(glm CONFIG REQUIRED)
 find_package(Eigen3 CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
+find_package(Boost REQUIRED COMPONENTS locale)
+
 
 target_link_libraries(${PROJECT_NAME} PRIVATE glad::glad)
 target_link_libraries(${PROJECT_NAME} PRIVATE glfw)
@@ -31,6 +33,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE glm::glm)
 target_link_libraries(${PROJECT_NAME} PRIVATE Eigen3::Eigen)
 target_link_libraries(${PROJECT_NAME} PRIVATE imgui::imgui)
 target_link_libraries(${PROJECT_NAME} PRIVATE assimp::assimp)
+target_link_libraries(${PROJECT_NAME} PRIVATE Boost::boost Boost::locale)
 
 target_link_libraries(${PROJECT_NAME}_console PRIVATE spdlog::spdlog_header_only)
 target_link_libraries(${PROJECT_NAME}_console PRIVATE Eigen3::Eigen)
